@@ -1,0 +1,3 @@
+python gen_model_answer.py --model-path /lustre/scratch/users/haonan.li/Bi-Mamba/fully_qat_record/mamba2_3b_1_3B_1bit_amber/ckpt-28 --model-id mamba_3b_1_3B_1bit_amber-28 --dtype bfloat16 --bench-name live_bench --model_size 3B --exist_extra_para
+python gen_model_answer.py --model-path /lustre/scratch/users/haonan.li/Bi-Mamba/fully_qat_record/mamba2_1.3b_1_1.3B_1bit_amber/ckpt-14 --model-id mamba2_1.3b_1_1.3B_1bit_amber-14 --dtype bfloat16 --bench-name live_bench --model_size 1.3B --exist_extra_para
+python gen_model_answer.py --model-path /lustre/scratch/users/haonan.li/Bi-Mamba/fully_qat_record/mamba2_780m_1_780M_1bit_amber/ckpt-6 --model-id mamba2_780m_1_780M_1bit_amber-6 --dtype bfloat16 --bench-name live_bench --model_size 780M --exist_extra_para

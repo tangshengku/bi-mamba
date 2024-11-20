@@ -207,8 +207,8 @@ def main(tag='fully_qat',
 
     last_ckpt_name = get_last_ckpt_idx(workdir=WORKDIR)
     del_list = []
-    if skip_chunk:
-        del_list = [7, 12, 20, 24, 26]
+    # if skip_chunk:
+    #     del_list = [7, 12, 20, 24, 26]
     cur_skip_num = sum([1 for i in del_list if i < last_ckpt_name])
     last_ckpt_idx = last_ckpt_name - cur_skip_num
     fabric.seed_everything(RANDOM_SEED + last_ckpt_idx + 1)
@@ -277,6 +277,16 @@ def main(tag='fully_qat',
             
     model = replace_with_learnable_binarylinear(model, 'column', ['lm_head'])
 
+    if last_ckpt_name != -1:
+        if not Path(f'{WORKDIR}/ckpt-{last_ckpt_name}/fabric_ckpt').exists():
+            weight_dict = {}
+            ckpt_plist = [p for p in Path(f'{WORKDIR}/ckpt-{last_ckpt_name}').iterdir() if p.suffix == '.bin']
+            for p in ckpt_plist:
+                _weight_dict = torch.load(p)
+                for k,v in _weight_dict.items():
+                    weight_dict[k] = v
+            model.load_state_dict(weight_dict)
+
     if fabric.global_rank == 0:
         total_params = sum(p.numel() for p in model.parameters())
         print('model with learnable para', total_params)
@@ -291,11 +301,10 @@ def main(tag='fully_qat',
 
     model, optimizer = fabric.setup(model, optimizer)
     if last_ckpt_name != -1:
-        fabric.load(
-            path=f'{WORKDIR}/ckpt-{last_ckpt_name}/fabric_ckpt',
-            state={'model': model, 'optimizer': optimizer})
-        
-
+        if Path(f'{WORKDIR}/ckpt-{last_ckpt_name}/fabric_ckpt').exists():
+            fabric.load(
+                path=f'{WORKDIR}/ckpt-{last_ckpt_name}/fabric_ckpt',
+                state={'model': model, 'optimizer': optimizer})
     
     torch.cuda.empty_cache()
 

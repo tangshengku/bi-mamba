@@ -1,3 +1,8 @@
+# import debugpy
+# debugpy.listen(("0.0.0.0", 8901))  # 将端口设置为8901
+# print("Waiting for debugger to attach...")
+# debugpy.wait_for_client()  # 让程序在此等待，直到调试器连接
+
 import argparse
 import torch
 from tqdm import tqdm
@@ -26,7 +31,7 @@ from utils import print_trainable_parameters
 
 def load_open_src(model_name):
     model = MambaLMHeadModel.from_pretrained(model_name).to('cuda')
-    tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-neox-20b")
+    tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-neox-20b", padding_side="left")
     return model, tokenizer
 
 @dataclass
@@ -106,7 +111,7 @@ def load_ckpts(model_size, ckpt_dir, exist_extra_para, keep_parts, scaling_patte
     print(model_size)
     print(config)
     model = MambaLMHeadModel(config).to('cuda')
-    tokenizer = AutoTokenizer.from_pretrained('huggyllama/llama-7b', padding_side="right", use_fast=False)
+    tokenizer = AutoTokenizer.from_pretrained('huggyllama/llama-7b', padding_side="left", use_fast=False)
 
     if exist_extra_para:
         model = replace_with_learnable_binarylinear(model, scaling_pattern, keep_parts)
@@ -130,21 +135,66 @@ def load_ckpts(model_size, ckpt_dir, exist_extra_para, keep_parts, scaling_patte
 
 
 def generate(model, tokenizer, prompt, max_new_tokens):
-    input_ids = torch.as_tensor(tokenizer([prompt]).input_ids).cuda()
-    # logits = model(input_ids).logits
-    # print('test', torch.nn.functional.softmax(logits, -1).max())
+    tokenizer.pad_token = tokenizer.eos_token
+    input_ids = tokenizer(prompt, return_tensors="pt", padding=True).input_ids.cuda()
     output_ids = model.generate(
         input_ids,
         max_new_tokens,
         eos_token_id=tokenizer.eos_token_id,
         unk_token_id=tokenizer.unk_token_id,
         )
-    # print(output_ids)
-    output = tokenizer.decode(
-                        output_ids,
-                        spaces_between_special_tokens=False,
-                    )
-    print(output)
+    ouputs = []
+    for ids in output_ids:
+        output = tokenizer.decode(
+                            ids,
+                            spaces_between_special_tokens=False,
+                            skip_special_tokens=False
+                        )
+        ouputs.append(output)
+    return ouputs
+
+
+def alpaca_generate(data_p, save_p, model, tokenizer, batch_size):
+    with Path(data_p).open('r', encoding='utf-8') as f:
+        data = json.load(f)
+    result = {}
+    batch = []
+    save_id = 0
+    save_p = Path(save_p)
+    if save_p.exists():
+        with save_p.open('r', encoding='utf-8') as r_f:
+            result = json.load(r_f)
+    for i, item in tqdm(enumerate(data)):
+        if str(i) in result:
+            save_id = i+1
+            continue
+        result[i] = item
+        if item['input'] != '':
+            prompt = item['instruction'] + ': ' + item["input"]
+        else:
+            prompt = item['instruction']
+
+        prompt = prompt + '\nAnswer: '
+        result[i]['prompt'] = prompt
+
+        batch.append(prompt)
+        if len(batch) == batch_size:
+            outputs = generate(model, tokenizer, batch, 200)
+            for ii, res in enumerate(outputs):
+                result[save_id + ii]['res'] = res
+                result[save_id + ii]['res_eos'] = res.split(tokenizer.eos_token)[0]
+            batch = []
+            save_id += batch_size
+            with Path(save_p).open('w', encoding='utf-8') as f:
+                json.dump(result, f, indent=4)
+
+    if len(batch) > 0:
+        outputs = generate(model, tokenizer, batch, 200)
+        for ii, res in enumerate(outputs):
+            result[save_id + ii]['res'] = res
+            result[save_id + ii]['res_eos'] = res.split(tokenizer.eos_token)[0]
+        with Path(save_p).open('w', encoding='utf-8') as f:
+            json.dump(result, f, indent=4)
 
 
 @torch.inference_mode()
@@ -314,111 +364,35 @@ def main(args):
             json.dump(result, f, ensure_ascii=False, indent=4)
 
 if __name__ == '__main__':
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument('--model_size', type=str, default='3B')
-    # parser.add_argument('--ckpt_dir', type=str)
-    # parser.add_argument('--ckpt_ids', type=str)
-    # parser.add_argument('--exist_extra_para', type=bool, default=True)
-    # parser.add_argument('--keep_parts', type=list, default=["lm_head"])
-    # parser.add_argument('--scaling_pattern', type=str, default='column')
-    # args = parser.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model_size', type=str, default='3B')
+    parser.add_argument('--model_dir', type=str)
+    parser.add_argument('--exist_extra_para', action="store_true")
+    parser.add_argument("--eval_open_src", action="store_true")
+    args = parser.parse_args()
 
-    # main(args)
+    model_dir = Path(args.model_dir)
+    if not args.eval_open_src:
+        model, tokenizer = load_ckpts(
+            args.model_size, 
+            model_dir,  
+            True, 
+            ["lm_head"], 
+            'column'
+            )
+    else:
+        model, tokenizer = load_open_src(model_dir)
 
-    _weight_dict = torch.load('BiLLM/output/mamba2-780m_c4_braq_128_hessian/pytorch_model.bin')
-    gptq_name_list = [k for k in _weight_dict]
-    print(gptq_name_list)
-    exit()
+    save_dir = Path('generate_res')
+    save_dir.mkdir(exist_ok=True)
+    save_path = f'generate_res/single_{model_dir.parent.name}_{model_dir.name}.json'
+    alpaca_generate("data/alpaca_data.json", save_path, model, tokenizer, 1)
 
-    model, tokenizer = load_open_src('pretrained/mamba2-780m')
-    base_name_list = [k for k in model.state_dict()]
-
-    with Path('gptq_name_list.txt').open('w') as f:
-        f.write('\n'.join(gptq_name_list))
-    with Path('base_name_list.txt').open('w') as f:
-        f.write('\n'.join(base_name_list))
-    exit()
-    
-
-
-
-    
-
-    
-
-    print_trainable_parameters(model)
-    exit()
-
-    model, tokenizer = load_ckpts(
-        '3B', 
-        'fully_qat_record/mamba2_3b_1_3B_1bit_amber/ckpt-28',  
-        True, 
-        ["lm_head"], 
-        'column'
-        )
-
-    # prompt = 'Generate 10 text sentences using the following prompt: The forest was silent'
-    # input_ids = tokenizer([prompt], return_tensors = 'pt').input_ids
-    # output = model(input_ids.to('cuda')).logits
-    # teacher_prob = F.softmax(output, dim=2)
-    # print(output.shape)
-    # print(teacher_prob[0,-1,:])
-    # print(teacher_prob[0,-1,:].topk(5))
-    # print(teacher_prob[0,-1,:].max())
-    # top_id = teacher_prob[0,-1,:].topk(5).indices
-    # top_tk = tokenizer.decode(top_id)
-    # print(top_tk)
-
-    # teacher = LlamaForCausalLM.from_pretrained("meta-llama/Llama-2-7b-hf").to('cuda')
-    # prompt = 'Generate 10 text sentences using the following prompt: The forest was silent'
-    # input_ids = tokenizer([prompt], return_tensors = 'pt').input_ids
-    # output = teacher(input_ids.to('cuda')).logits
-    # teacher_prob = F.softmax(output, dim=2)
-    # print(output.shape)
-    # print(teacher_prob[0,3,:])
-    # print(teacher_prob[0,3,:].max())
-    # top_id = teacher_prob[0,3,:].topk(5).indices
-    # top_tk = tokenizer.decode(top_id)
-    # print(top_tk)
-
-    # model = MambaLMHeadModel.from_pretrained('pretrained/mamba2-2.7b').to('cuda')
-    # tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-neox-20b")
-    # # check_groundtruth(model, tokenizer)
-    
-    generate(model, tokenizer, 'Generate 10 text sentences using the following prompt: The forest was silent', 50)
-    # tk = generate(model, tokenizer, 'Generate 10 text sentences using the following prompt: The forest was silent', 100)
-    # print(tk)
-
-    # # check_logit(model, tokenizer, 'Generate 10 text sentences using the following prompt: The forest was silent')
-
-    # tokenizer = AutoTokenizer.from_pretrained('huggyllama/llama-7b', padding_side="right", use_fast=False)
-    # 
-
-    # from transformers import AutoTokenizer, AutoModelForCausalLM
-    # import transformers
-
-    
-    # model = "meta-llama/Llama-2-7b-hf"
-
-    # tokenizer = AutoTokenizer.from_pretrained(model)
-    # tokenizer = AutoTokenizer.from_pretrained('huggyllama/llama-7b', padding_side="right", use_fast=False)
-
-    # model = AutoModelForCausalLM.from_pretrained(
-    #     model, 
-    # )
-
-    # pipeline = transformers.pipeline(
-    #     "text-generation",
-    #     model=model,
-    #     tokenizer= tokenizer,
-    #     torch_dtype=torch.float16,
-    #     device="cuda",
-    # )
-
-    # sequences = pipeline(
-    #     'Hi! Tell me about yourself!',
-    #     do_sample=True,
-    # )
-    # print(sequences[0].get("generated_text"))
-
-    # print(output)
+    # prompts = [
+    #     "Explain the use of word embeddings in Natural Language Processing\nAnswer: "
+    # ]
+    # res = generate(model, tokenizer, prompts, 200)
+    # for r in res:
+    #     print(r)
+    #     print('\n')
+    # print('='*32)

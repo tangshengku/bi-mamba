@@ -101,7 +101,7 @@ def train_chunk(fabric,
             if use_kd == 1:
                 student_logits = model(input_ids).logits
                 with torch.no_grad():
-                    teacher_logits = teacher(input_ids).logits
+                    teacher_logits = teacher(input_ids).logits[:, :, :32000]
                 teacher_prob = F.softmax(teacher_logits, dim=2).clone().detach()
                 loss = torch.nn.functional.cross_entropy(
                     student_logits.reshape((-1, student_logits.size(-1))), teacher_prob.reshape((-1, teacher_prob.size(-1))))
@@ -180,10 +180,7 @@ def main(tag='fully_qat',
         devices=n_devices_per_node,
         precision=PRECISION,
         strategy=FSDPStrategy(
-            auto_wrap_policy=partial(
-                transformer_auto_wrap_policy,
-                transformer_layer_cls={LlamaDecoderLayer}),
-            activation_checkpointing_policy={Mamba2, GatedMLP, Block, LlamaDecoderLayer},
+            activation_checkpointing_policy={Mamba2, Block, },
             cpu_offload=True,
             limit_all_gathers=True,
             )
@@ -191,7 +188,7 @@ def main(tag='fully_qat',
     fabric.launch()
 
     if use_kd > 0:
-        teacher = LlamaForCausalLM.from_pretrained("meta-llama/Llama-2-7b-hf")
+        teacher = LlamaForCausalLM.from_pretrained("microsoft/Phi-3.5-mini-instruct")
         # teacher = LlamaForCausalLM.from_pretrained("/lustre/scratch/users/liqun.ma/openllama/3b_v2")
         teacher.eval()
         for param in teacher.parameters():

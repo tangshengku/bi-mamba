@@ -16,3 +16,4 @@ BiLLM/
 gptq_mamba/
 gptq_mamba_rand/
 LiveBench/
+*.so

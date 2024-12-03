@@ -22,7 +22,7 @@ export TRITON_LIBCUDA_PATH=/mnt/nfs/clustersw/shared/cuda/12.1.0/targets/x86_64-
 
 # srun python fbi_mamba.py --tag mamba2_1.3b --model_size 1.3B --train_data_dir /nfs/scistore19/alistgrp/stang/data/amber/train --use_kd 1 --n_nodes 1 --n_devices_per_node 4 --per_device_batch_size 16 --w_bits 1 --accumulate_grad_batches 4 --run_wandb
 
-srun python fbi_mamba.py --tag mamba2_780m_phi-3.5-mini-instruct --model_size 780M --train_data_dir /nfs/scistore19/alistgrp/stang/data/amber/train --use_kd 1 --n_nodes 1 --n_devices_per_node 8 --per_device_batch_size 16 --w_bits 1 --accumulate_grad_batches 2 --run_wandb
+srun python fbi_mamba.py --tag mamba2_780m_phi-3.5-mini-instruct --model_size 780M --train_data_dir /nfs/scistore19/alistgrp/stang/data/amber/train --use_kd 1 --n_nodes 1 --n_devices_per_node 8 --per_device_batch_size 8 --w_bits 1 --accumulate_grad_batches 4 --run_wandb
 
 
 

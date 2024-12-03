@@ -56,6 +56,7 @@ TRAIN_DATA_DIR = '/rampart-stor/liqun/AmberDatasets/train'
 TRAIN_EXAMPLES_PER_CHUNK = 1706976
 N_CHUNKS = 360
 
+TEMP = 1.0
 
 def collate_fn(examples, device):
     token_ids = torch.tensor(
@@ -98,6 +99,10 @@ def train_chunk(fabric,
             examples=examples[i:i+per_device_batch_size], device=fabric.device)
         input_ids, labels = batch['input_ids'], batch['labels']
         with fabric.no_backward_sync(model, enabled=is_accumulating):
+            if use_kd == 0:
+                logits = model(input_ids).logits
+                loss = torch.nn.functional.cross_entropy(
+                    logits.reshape((-1, logits.size(-1))), labels.reshape(-1))
             if use_kd == 1:
                 student_logits = model(input_ids).logits
                 with torch.no_grad():
@@ -115,10 +120,14 @@ def train_chunk(fabric,
                 ar_loss = torch.nn.functional.cross_entropy(
                     student_logits.reshape((-1, student_logits.size(-1))), labels.reshape(-1))
                 loss = 0.5*ar_loss + 0.5*kd_loss
-            else:
-                logits = model(input_ids).logits
-                loss = torch.nn.functional.cross_entropy(
-                    logits.reshape((-1, logits.size(-1))), labels.reshape(-1))
+            elif use_kd == 3:
+                student_logits = model(input_ids).logits
+                with torch.no_grad():
+                    teacher_logits = teacher(input_ids).logits
+                teacher_logprob = F.log_softmax(teacher_logits/TEMP, dim=2).clone().detach()
+                student_prob = F.softmax(student_logits/TEMP, dim=2).clone().detach()
+                loss = TEMP*TEMP * torch.nn.functional.kl_div(
+                    student_prob.reshape((-1, student_prob.size(-1))), teacher_logprob.reshape((-1, teacher_logprob.size(-1))), reduction='batchmean')
                 
             fabric.backward(loss / accumulate_grad_batches)
 

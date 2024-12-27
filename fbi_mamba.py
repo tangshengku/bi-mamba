@@ -3,33 +3,26 @@ from pytz import timezone
 import time
 from functools import partial
 import wandb
-import os
 import fire
 import tqdm
+import json
 import torch
 import torch.nn.functional as F
-import torch.nn as nn
-from torch.distributed.fsdp import MixedPrecision
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 import lightning as L
 from lightning.fabric.strategies import FSDPStrategy
-from lightning.fabric.strategies import ModelParallelStrategy
-from transformers import AutoConfig, AutoTokenizer,LlamaConfig
-# from transformers import MambaConfig, MambaForCausalLM, AutoTokenizer
+from transformers import AutoTokenizer
 from mamba_ssm.modules.block import Block
-# from transformers.models.mamba.modeling_mamba import MambaBlock
-from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
+from mamba_ssm.models.bimamba_mixer_seq_simple import BiMambaLMHeadModel
 from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.modules.mlp import GatedMLP
-from mamba_ssm.modules.mamba2 import Mamba2
+from mamba_ssm.modules.bimamba2 import BiMamba2
 
 from model_utils.modeling_llama import LlamaForCausalLM, LlamaDecoderLayer
 from qat.replace_module import (
     replace_with_learnable_binarylinear, 
-    # replace_with_quantizelinear,
     check_para_state
 )
-import json
 from pathlib import Path
 
 from main_utils import (
@@ -52,7 +45,7 @@ ACCELERATOR = 'cuda'
 PRECISION = 'bf16-mixed'
 RANDOM_SEED = 11111
 
-TRAIN_DATA_DIR = '/rampart-stor/liqun/AmberDatasets/train'
+TRAIN_DATA_DIR = 'data/AmberDatasets/train'
 TRAIN_EXAMPLES_PER_CHUNK = 1706976
 N_CHUNKS = 360
 
@@ -82,7 +75,6 @@ def train_chunk(fabric,
 
     example_batch_idxes = tqdm.trange(
         0, len(examples), per_device_batch_size,
-        # 0, 100, per_device_batch_size,
         desc=f'Training chunk {chunk_name}({chunk_idx}) (global_micro_batch_size='
              f'{per_device_batch_size * fabric.world_size}, '
              f'accumulate_grad_batches={accumulate_grad_batches})')
@@ -169,7 +161,6 @@ def main(tag='fully_qat',
          per_device_batch_size=50,
          accumulate_grad_batches=40,
          train_data_dir = TRAIN_DATA_DIR,
-         skip_chunk = False,
          w_bits = 1,
          use_kd=1,
          run_wandb=False
@@ -192,7 +183,7 @@ def main(tag='fully_qat',
             auto_wrap_policy=partial(
                 transformer_auto_wrap_policy,
                 transformer_layer_cls={LlamaDecoderLayer}),
-            activation_checkpointing_policy={Mamba2, GatedMLP, Block, LlamaDecoderLayer},
+            activation_checkpointing_policy={BiMamba2, GatedMLP, Block, LlamaDecoderLayer},
             cpu_offload=True,
             limit_all_gathers=True,
             )
@@ -201,7 +192,6 @@ def main(tag='fully_qat',
 
     if use_kd > 0:
         teacher = LlamaForCausalLM.from_pretrained("meta-llama/Llama-2-7b-hf")
-        # teacher = LlamaForCausalLM.from_pretrained("/lustre/scratch/users/liqun.ma/openllama/3b_v2")
         teacher.eval()
         for param in teacher.parameters():
             param.requires_grad = False
@@ -223,61 +213,13 @@ def main(tag='fully_qat',
     fabric.seed_everything(RANDOM_SEED + last_ckpt_idx + 1)
 
     tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
-    if model_size == '3B':
-        # with Path(f'mamba2_{model_size}.json').open('r') as r_f:
-        #     _config = json.load(r_f)
-        # config = MambaConfig(**_config)
-        config = MambaConfig(
-            d_model = 2560,
-            vocab_size=32000, 
-            d_intermediate = 0,  
-            n_layer = 64,
-            ssm_cfg={"layer": "Mamba2"}, 
-            attn_cfg = {}, 
-            attn_layer_idx = [], 
-            pad_vocab_size_multiple=16
-            )
-    elif model_size == '1.3B':
-        config = MambaConfig(
-            d_model = 2048,
-            d_intermediate = 0,  
-            n_layer = 48,
-            vocab_size=32000, 
-            ssm_cfg={"layer": "Mamba2"}, 
-            attn_cfg = {}, 
-            attn_layer_idx = [], 
-            pad_vocab_size_multiple=16,
-            tie_embeddings = True
-            )
-    elif model_size == '780M':
-        config = MambaConfig(
-            d_model = 1536,
-            d_intermediate = 0,  
-            n_layer = 48,
-            vocab_size=32000, 
-            ssm_cfg={"layer": "Mamba2"}, 
-            attn_cfg = {}, 
-            attn_layer_idx = [], 
-            pad_vocab_size_multiple=16,
-            tie_embeddings = True
-            )
-    elif model_size == '370M':
-        config = MambaConfig(
-            d_model = 1024,
-            d_intermediate = 0,  
-            n_layer = 48,
-            vocab_size=32000, 
-            ssm_cfg={"layer": "Mamba2"}, 
-            attn_cfg = {}, 
-            attn_layer_idx = [], 
-            pad_vocab_size_multiple=16,
-            tie_embeddings = True
-            )
+    with Path(f'mamba2_{model_size}.json').open('r') as r_f:
+            _config = json.load(r_f)
+    config = MambaConfig(**_config)
 
-    # model = MambaForCausalLM(config=config)
     print(model_size)
     print(config)
-    model = MambaLMHeadModel(config) 
+    model = BiMambaLMHeadModel(config) 
 
     if fabric.global_rank == 0:
         print(config)
@@ -355,5 +297,3 @@ def main(tag='fully_qat',
 
 if __name__ == '__main__':
     fire.Fire(main)
-
-# python fbi_mamba.py --tag mamba_3b --model_size 3B --train_data_dir /lustre/scratch/shared-folders/llm_project/AmberDataset/train --use_kd 1 --n_nodes 1 --n_devices_per_node 8 --per_device_batch_size 4 --w_bits 1 --accumulate_grad_batches 1 --run_wandb 

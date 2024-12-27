@@ -26,8 +26,10 @@ from mamba_ssm.distributed.distributed_utils import all_reduce, reduce_scatter
 from mamba_ssm.ops.triton.ssd_combined import mamba_chunk_scan_combined
 from mamba_ssm.ops.triton.ssd_combined import mamba_split_conv1d_scan_combined
 
+from qat.base_binarizer import STEBinary
 
-class Mamba2(nn.Module):
+
+class BiMamba2(nn.Module):
     def __init__(
         self,
         d_model,
@@ -173,6 +175,8 @@ class Mamba2(nn.Module):
         A = -torch.exp(self.A_log)  # (nheads) or (d_inner, d_state)
         dt_limit_kwargs = {} if self.dt_limit == (0.0, float("inf")) else dict(dt_limit=self.dt_limit)
         if self.use_mem_eff_path and inference_params is None:
+            bi_outproj_weight = STEBinary().apply(self.out_proj.weight)
+            bi_outproj_weight = self.out_proj.wscale *  bi_outproj_weight + self.out_proj.wbias
             out = mamba_split_conv1d_scan_combined(
                 zxbcdt,
                 rearrange(self.conv1d.weight, "d 1 w -> d w"),
@@ -185,7 +189,8 @@ class Mamba2(nn.Module):
                 activation=self.activation,
                 rmsnorm_weight=self.norm.weight if self.rmsnorm else None,
                 rmsnorm_eps=self.norm.eps if self.rmsnorm else 1e-6,
-                outproj_weight=self.out_proj.weight,
+                outproj_weight=bi_outproj_weight,
+                # outproj_weight=self.out_proj.weight,
                 outproj_bias=self.out_proj.bias,
                 headdim=None if self.D_has_hdim else self.headdim,
                 ngroups=self.ngroups,

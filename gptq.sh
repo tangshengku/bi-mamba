@@ -1,11 +1,10 @@
 #!/bin/bash
-#SBATCH --job-name=eval
+#SBATCH --job-name=gptq
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=4
 #SBATCH --cpus-per-task=16
 #SBATCH --partition=gpumid
 #SBATCH --gres=gpu:4
-#SBATCH --reservation=training
 
 
 CUDA_VISIBLE_DEVICES=0 python gptq_rand.py pretrained/mamba2-780m c4 --wbits 2 --true-sequential --act-order --prob 0.1 &

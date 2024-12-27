@@ -9,7 +9,6 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import StateDictType
 from lightning.fabric.strategies import FSDPStrategy
 
-# from model_utils.modeling_llama import LlamaForCausalLM
 from pathlib import Path
 
 

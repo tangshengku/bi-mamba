@@ -8,18 +8,17 @@ import torch.nn as nn
 from pathlib import Path
 import json
 from datautils import get_loaders
-# from transformers import AutoTokenizer, AutoModelForCausalLM, MambaConfig, MambaForCausalLM, AutoTokenizer
 from transformers import AutoTokenizer
 from safetensors import safe_open
 from utils import load_json, save_json
 from qat.replace_module import replace_with_learnable_binarylinear
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
+from mamba_ssm.models.bimamba_mixer_seq_simple import BiMambaLMHeadModel
 from mamba_ssm.models.config_mamba import MambaConfig
 
 
 from lm_eval.api.model import LM
 from lm_eval.api.registry import register_model
-from lm_eval.__main__ import cli_evaluate
 import transformers
 
 @register_model("mamba")
@@ -75,97 +74,34 @@ class MambaEvalWrapper(HFLM):
             **generation_kwargs,
         )
 
-
-def _parse_keep_parts(s):
-    if s == '':
-        return []
-    else:
-        parts = [ss.strip() for ss in s.split(',')]
-        return parts
-
 def _parse_eval_task(task_str):
-    optional_tasks = ['ppl', 'boolq', 'piqa', 'hellaswag', 'winogrande', 'arc_easy', 'arc_challenge', 'openbookqa', 'mmlu', 'storycloze_2016', 'storycloze', 'storycloze_2018', 'gsm8k']
     tasks = [s.strip() for s in task_str.split(',')]
-    parsed_tasks = []
-    for task in tasks:
-        if task in optional_tasks:
-            parsed_tasks.append(task)
-        else:
-            print(f'Wrong task name: {task} in your input: {task_str}. The optional tasks are: {", ".join(optional_tasks)}')
-    return parsed_tasks
+    return tasks
 
 
-def load_open_src(model_name):
+def load_mamba_ckpt(model_name):
     model = MambaLMHeadModel.from_pretrained(model_name).to('cuda')
     tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-neox-20b")
     return model, tokenizer
 
 
-def load_ckpts(model_size, ckpt_dir, ckpt_type, exist_extra_para, keep_parts, scaling_pattern):
-    assert model_size in ["780M", "1.3B", "3B"]
+def load_bimamba_ckpt(model_size, ckpt_dir, ckpt_type, exist_extra_para):
+    assert model_size in ["780M", "1.3B", "2.7B"]
     assert ckpt_type in ['torch', 'hf_st', 'lightning']
 
     ckpt_dir = Path(ckpt_dir)
-    if model_size == '3B':
-        # with Path(f'mamba2_{model_size}.json').open('r') as r_f:
-        #     _config = json.load(r_f)
-        # config = MambaConfig(**_config)
-        config = MambaConfig(
-            d_model = 2560,
-            vocab_size=32000,
-            d_intermediate = 0,
-            n_layer = 64,
-            ssm_cfg={"layer": "Mamba2"},
-            attn_cfg = {},
-            attn_layer_idx = [],
-            pad_vocab_size_multiple=16
-            )
-    elif model_size == '1.3B':
-        config = MambaConfig(
-            d_model = 2048,
-            d_intermediate = 0,
-            n_layer = 48,
-            vocab_size=32000,
-            ssm_cfg={"layer": "Mamba2"},
-            attn_cfg = {},
-            attn_layer_idx = [],
-            pad_vocab_size_multiple=16,
-            tie_embeddings = True
-            )
-    elif model_size == '780M':
-        config = MambaConfig(
-            d_model = 1536,
-            d_intermediate = 0,
-            n_layer = 48,
-            vocab_size=32000,
-            ssm_cfg={"layer": "Mamba2"},
-            attn_cfg = {},
-            attn_layer_idx = [],
-            pad_vocab_size_multiple=16,
-            tie_embeddings = True
-            )
-    elif model_size == '370M':
-        config = MambaConfig(
-            d_model = 1024,
-            d_intermediate = 0,
-            n_layer = 48,
-            vocab_size=32000,
-            ssm_cfg={"layer": "Mamba2"},
-            attn_cfg = {},
-            attn_layer_idx = [],
-            pad_vocab_size_multiple=16,
-            tie_embeddings = True
-            )
 
-    # model = MambaForCausalLM(config=config)
+    with Path(f'mamba2_{model_size}.json').open('r') as r_f:
+            _config = json.load(r_f)
+    config = MambaConfig(**_config)
+
     print(model_size)
     print(config)
-    model = MambaLMHeadModel(config).to('cuda')
-    # model = MambaLMHeadModel(config).to('cpu')
+    model = BiMambaLMHeadModel(config).to('cuda')
     tokenizer = AutoTokenizer.from_pretrained('huggyllama/llama-7b', padding_side="left", use_fast=False)
 
     if exist_extra_para:
-        model = replace_with_learnable_binarylinear(model, scaling_pattern, keep_parts)
+        model = replace_with_learnable_binarylinear(model, scaling_pattern="column", keep_parts=["lm_head"])
 
     weight_dict = {}
     if ckpt_type == 'torch':
@@ -173,7 +109,6 @@ def load_ckpts(model_size, ckpt_dir, ckpt_type, exist_extra_para, keep_parts, sc
         for p in ckpt_plist:
             _weight_dict = torch.load(p)
             for k,v in _weight_dict.items():
-                # if 'self_attn.rotary_emb.inv_freq' not in k:
                 weight_dict[k] = v
 
     elif ckpt_type == 'lightning':
@@ -186,12 +121,9 @@ def load_ckpts(model_size, ckpt_dir, ckpt_type, exist_extra_para, keep_parts, sc
             with safe_open(p, framework="pt", device="cpu") as f:
                 weight_dict.update({key: f.get_tensor(key) for key in f.keys()})
 
-
     model.load_state_dict(weight_dict)
     for param in model.parameters():
         param.data = param.data.to(torch.float16)
-        # param.data = param.data.to(torch.bfloat16)
-
 
     return model, tokenizer
 
@@ -199,11 +131,8 @@ def load_ckpts(model_size, ckpt_dir, ckpt_type, exist_extra_para, keep_parts, sc
 @torch.no_grad()
 def evaluate_ckpt_task(model, tokenizer, tasks, num_fewshot, batch_size, max_length):
     task_manager = lm_eval.tasks.TaskManager()
-    # eval_lm = MambaEvalWrapper(model, tokenizer=tokenizer, batch_size=batch_size, max_length=max_length)
     eval_lm = MambaEvalWrapper(model, tokenizer=tokenizer, batch_size=batch_size, max_length=max_length)
     result = lm_eval.simple_evaluate(eval_lm, tasks = tasks, num_fewshot = num_fewshot, task_manager=task_manager)
-    # result = result["results"]
-    # print(result)
     return result
 
 
@@ -241,24 +170,19 @@ def evaluate_ckpt_ppl(model, tokenizer, ppl_datasets, max_length, limit = -1):
     return results
 
 
-def eval_ckpt(ckpt_dir, args):
-    keep_parts = _parse_keep_parts(args.keep_parts)
+def eval_bimamba_ckpt(ckpt_dir, args):
     tasks = _parse_eval_task(args.task)
     print('tasks', tasks)
-    print('keep_parts', keep_parts)
     eval_ppl = 'ppl' in tasks
     down_stream_tasks = [t for t in tasks if t != 'ppl']
 
     ckpt_dir = Path(ckpt_dir)
-    model, tokenizer = load_ckpts(
+    model, tokenizer = load_bimamba_ckpt(
         model_size = args.model_size,
         ckpt_dir = ckpt_dir,
         ckpt_type = args.ckpt_type,
         exist_extra_para = args.exist_extra_para,
-        keep_parts = keep_parts,
-        scaling_pattern = args.scaling_pattern
         )
-    # model = to_regular_linear(model)
 
     res = {}
     if eval_ppl:
@@ -283,7 +207,7 @@ def eval_ckpt(ckpt_dir, args):
     return res
 
 
-def evaluate_qat(args):
+def evaluate_bimamba_ckpt_list(args):
     save_dir = Path('eval_result')
     save_dir.mkdir(exist_ok=True, parents=True)
 
@@ -291,7 +215,7 @@ def evaluate_qat(args):
 
     ckpt_ids = [i.strip() for i in args.ckpt_ids.split(',')]
     ckpt_ids = sorted(ckpt_ids, key=lambda x: int(x))
-    save_p = save_dir / f"bf_{src_dir.name}_{'-'.join(ckpt_ids)}.json"
+    save_p = save_dir / f"{src_dir.name}_{'-'.join(ckpt_ids)}.json"
     if save_p.exists():
         result = load_json(save_p)
     else:
@@ -302,7 +226,7 @@ def evaluate_qat(args):
         print(ckpt_name)
         ckpt_dir = src_dir / ckpt_name
 
-        res = eval_ckpt(ckpt_dir, args)
+        res = eval_bimamba_ckpt(ckpt_dir, args)
 
         if ckpt_name not in result:
             result[ckpt_name] = res
@@ -310,7 +234,7 @@ def evaluate_qat(args):
             result[ckpt_name].update(res)
     save_json(result, save_p)
 
-def evaluate_open_src(args):
+def evaluate_mamba_ckpt(args):
     save_dir = Path('eval_result')
     save_dir.mkdir(exist_ok=True, parents=True)
     tasks = _parse_eval_task(args.task)
@@ -326,18 +250,14 @@ def evaluate_open_src(args):
     else:
         result = {}
 
-    model, tokenizer = load_open_src(args.path)
+    model, tokenizer = load_mamba_ckpt(args.path)
 
     res = {}
     if eval_ppl:
         ppl_res = evaluate_ckpt_ppl(
             model = model,
             tokenizer = tokenizer,
-            ppl_datasets = [
-                'wikitext2', 
-                # 'ptb', 
-                # 'c4'
-                ],
+            ppl_datasets = ['wikitext2', 'ptb', 'c4'],
             max_length = 2048
             )
         res.update(ppl_res)
@@ -387,11 +307,6 @@ if __name__ == "__main__":
         help="model size",
     )
     parser.add_argument(
-        "--keep_parts",
-        type=str,
-        default="lm_head"
-    )
-    parser.add_argument(
         "--ckpt_type",
         type=str,
         default='torch',
@@ -412,33 +327,10 @@ if __name__ == "__main__":
         default=16,
         help="batch_size for evaluation"
     )
-    parser.add_argument(
-        "--binarization_method",
-        type=str,
-        default="full_binary",
-        choices=[
-            "xnor_outlier",
-            "xnor_outlier_hessian",
-            "full_binary"
-        ],
-    )
-    parser.add_argument(
-        "--scaling_pattern",
-        type=str,
-        default="column",
-        choices=[
-            "row",
-            "column",
-            "single"
-        ],
-    )
 
     args = parser.parse_args()
 
     if args.eval_open_src:
-        evaluate_open_src(args)
+        evaluate_mamba_ckpt(args)
     else:
-        evaluate_qat(args)
-
-# CUDA_VISIBLE_DEVICES=0 python eval_mamba.py --path fully_qat_record/mamba2_3b_1_3B_1bit_amber --exist_extra_para --ckpt_ids 5 --batch_size 16 --model_size 3B
-# CUDA_VISIBLE_DEVICES=0 python eval_mamba.py --path pretrained/mamba2-2.7b --batch_size 16 --eval_open_src
+        evaluate_bimamba_ckpt_list(args)

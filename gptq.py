@@ -1,11 +1,6 @@
-# import debugpy
-# debugpy.listen(("0.0.0.0", 8901))  # 将端口设置为5678
-# print("Waiting for debugger to attach...")
-# debugpy.wait_for_client()  # 让程序在此等待，直到调试器连接
-
-
 import math
 import time
+import np
 
 import torch
 import torch.nn as nn
@@ -743,41 +738,3 @@ if __name__ == '__main__':
         base_model = MambaLMHeadModel.from_pretrained(args.model).to('cpu')
         model = gptq2normal(base_model, model.to('cpu'))
         torch.save(model.state_dict(), args.save)
-
-    # if args.eval:
-    #     base_model = MambaLMHeadModel.from_pretrained(args.model).to('cpu')
-
-    #     tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-neox-20b")
-    #     # for k in model.state_dict():
-    #     #     print('before', k)
-    #     print('before', model.state_dict()['backbone.layers.47.mixer.out_proj.weight'])
-    #     llama_pack3(model, quantizers)
-    #     model.to(DEV)
-    #     # for k in model.state_dict():
-    #     #     print('after', k)
-    #     print('after', model.state_dict()['backbone.layers.47.mixer.out_proj.qweight'])
-    #     exit()
-    #     res = {}
-    #     ppl_res = evaluate_ckpt_ppl(
-    #         model = model,
-    #         tokenizer = tokenizer,
-    #         ppl_datasets = ['wikitext2', 'ptb', 'c4'],
-    #         max_length = 2048
-    #     )
-    #     res.update(ppl_res)
-    #     task_res = evaluate_ckpt_task(
-    #         model = model,
-    #         tokenizer = tokenizer,
-    #         tasks = ['boolq','piqa','hellaswag','winogrande','arc_easy','arc_challenge','openbookqa'],
-    #         num_fewshot = 0,
-    #         batch_size = 16,
-    #         max_length = 2048
-    #         )
-    #     res.update(task_res)
-    #     with Path(f'eval_result/{args.model.replace("/", "_")}.json').open('w') as f:
-    #         json.dump(res, f, indent=4)
-
-    
-    # CUDA_VISIBLE_DEVICES=0 python gptq.py pretrained/mamba2-780m c4 --wbits 4 --true-sequential --act-order --save gptq_mamba/mamba2_780M_4bit_seq/pytorch_model.bin
-    # CUDA_VISIBLE_DEVICES=1 python gptq.py pretrained/mamba2-1.3b c4 --wbits 4 --true-sequential --act-order --save gptq_mamba/mamba2_1.3b_4bit_seq/pytorch_model.bin
-    # CUDA_VISIBLE_DEVICES=2 python gptq.py pretrained/mamba2-2.7b c4 --wbits 4 --true-sequential --act-order --save gptq_mamba/mamba2_3b_4bit_seq/pytorch_model.bin

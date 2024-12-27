@@ -91,7 +91,7 @@ def load_bimamba_ckpt(model_size, ckpt_dir, ckpt_type, exist_extra_para):
 
     ckpt_dir = Path(ckpt_dir)
 
-    with Path(f'mamba_config/mamba2_{model_size}.json').open('r') as r_f:
+    with Path(f'mamba_config/bimamba2_{model_size}.json').open('r') as r_f:
             _config = json.load(r_f)
     config = MambaConfig(**_config)
 

@@ -16,7 +16,6 @@
 # are owned by their respective authors and are not affiliated with this project.
 # --------------------------------------------------------------------------------
 
-import numpy as np
 import torch
 from datasets import load_dataset
 from transformers import AutoTokenizer
@@ -30,8 +29,7 @@ from torch.utils.data import Dataset
 import random
 from fastchat.conversation import SeparatorStyle
 from fastchat.model.model_adapter import get_conversation_template
-from typing import Dict, Optional, Sequence
-from utils import load_json, save_json
+from utils import load_json
 from transformers.trainer_pt_utils import LabelSmoother
 
 IGNORE_TOKEN_ID = LabelSmoother.ignore_index

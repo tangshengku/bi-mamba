@@ -213,7 +213,7 @@ def main(tag='fully_qat',
     fabric.seed_everything(RANDOM_SEED + last_ckpt_idx + 1)
 
     tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
-    with Path(f'mamba2_{model_size}.json').open('r') as r_f:
+    with Path(f'mamba_config/mamba2_{model_size}.json').open('r') as r_f:
             _config = json.load(r_f)
     config = MambaConfig(**_config)
 

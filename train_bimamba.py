@@ -168,7 +168,7 @@ def main(tag='fully_qat',
 
     TIMEZONE = timezone('EST')
     DATE = str(datetime.now(tz=TIMEZONE)).split()[0]
-    PROJECT_NAME = 'FBI-Mamba'
+    PROJECT_NAME = 'Bi-Mamba'
     WORKDIR = f'fully_qat_record/{tag}_{use_kd}_{model_size}_{w_bits}bit_amber'
     RUN_NAME = f'{WORKDIR}_{DATE}'
     Path(WORKDIR).mkdir(exist_ok=True, parents=True)

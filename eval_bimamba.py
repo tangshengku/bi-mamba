@@ -170,7 +170,7 @@ def evaluate_ckpt_ppl(model, tokenizer, ppl_datasets, max_length, limit = -1):
     return results
 
 
-def eval_bimamba_ckpt(ckpt_dir, args):
+def eval_bimamba(ckpt_dir, args):
     tasks = _parse_eval_task(args.task)
     print('tasks', tasks)
     eval_ppl = 'ppl' in tasks
@@ -207,26 +207,22 @@ def eval_bimamba_ckpt(ckpt_dir, args):
     return res
 
 
-def evaluate_bimamba_ckpt_list(args):
+def evaluate_bimamba_ckpt(args):
     save_dir = Path('eval_result')
     save_dir.mkdir(exist_ok=True, parents=True)
 
     src_dir = Path(args.path)
 
-    ckpt_ids = [i.strip() for i in args.ckpt_ids.split(',')]
-    ckpt_ids = sorted(ckpt_ids, key=lambda x: int(x))
-    save_p = save_dir / f"{src_dir.name}_{'-'.join(ckpt_ids)}.json"
+    save_p = save_dir / f"{src_dir.name}.json"
     if save_p.exists():
         result = load_json(save_p)
     else:
         result = {}
 
-    for cid in ckpt_ids:
-        ckpt_name = f'ckpt-{cid}'
+        ckpt_name = f'ckpt-{src_dir.name}'
         print(ckpt_name)
-        ckpt_dir = src_dir / ckpt_name
 
-        res = eval_bimamba_ckpt(ckpt_dir, args)
+        res = eval_bimamba(src_dir, args)
 
         if ckpt_name not in result:
             result[ckpt_name] = res
@@ -297,11 +293,6 @@ if __name__ == "__main__":
         help="evaluate tasks",
     )
     parser.add_argument(
-        "--ckpt_ids",
-        type=str,
-        help="evaluate tasks",
-    )
-    parser.add_argument(
         "--model_size",
         type=str,
         help="model size",
@@ -333,4 +324,4 @@ if __name__ == "__main__":
     if args.eval_open_src:
         evaluate_mamba_ckpt(args)
     else:
-        evaluate_bimamba_ckpt_list(args)
+        evaluate_bimamba_ckpt(args)

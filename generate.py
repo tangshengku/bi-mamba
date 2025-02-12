@@ -1,8 +1,3 @@
-# import debugpy
-# debugpy.listen(("0.0.0.0", 8901))  # 将端口设置为8901
-# print("Waiting for debugger to attach...")
-# debugpy.wait_for_client()  # 让程序在此等待，直到调试器连接
-
 import argparse
 import torch
 from tqdm import tqdm

@@ -285,12 +285,18 @@ def simple_decode(
     unk_token_id=None,):
     res = []
     sample_tkid = None
-    while len(res) < max_new_tokens and sample_tkid != eos_token_id and sample_tkid != unk_token_id:
+    while len(res) < 512:
         logits = model(input_ids).logits
         sel_ids = torch.argmax(logits, dim=-1)
-        sample_tkid = sel_ids[0, -1]
+        sample_tkid = sel_ids[:, -1]
+        if len(sample_tkid.shape) == 0:
+            sample_tkid = sample_tkid.unsqueeze(0)
         res.append(sample_tkid)
         input_ids = torch.cat([input_ids, sel_ids[:, -1].unsqueeze(-1)], -1)
+
+    res = torch.stack(res, -1)
+    if len(res.shape) == 1:
+        res = res.unsqueeze(0)
     
     return res
 
@@ -313,7 +319,6 @@ class GenerationMixin:
         output_scores=False,
         **kwargs,
     ):
-        print('new generate')
         res = simple_decode(self, input_ids, max_new_tokens, eos_token_id, unk_token_id)
         return res
     

@@ -1,5 +1,5 @@
 __pycache__/
-assets/
+# assets/
 fully_qat_record/
 pretrained/
 slurm*

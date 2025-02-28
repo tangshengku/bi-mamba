@@ -13,4 +13,7 @@ srun python train_bimamba.py --tag mamba2_1.3b --model_size 1.3B --train_data_di
 
 srun python train_bimamba.py  --tag mamba2_780m --model_size 780M --train_data_dir $train_data_dir --use_kd 1 --n_nodes 1 --n_devices_per_node 4 --per_device_batch_size 8 --w_bits 1 --accumulate_grad_batches 8 --run_wandb
 
-srun python train_bimamba.py  --tag mamba2_3b_true --model_size 2.7B  --train_data_dir $train_data_dir --use_kd 1 --n_nodes 1 --n_devices_per_node 8 --per_device_batch_size 8 --w_bits 1 --accumulate_grad_batches 4 --run_wandb
+srun python train_bimamba.py  --tag mamba2_2.7b --model_size 2.7B  --train_data_dir $train_data_dir --use_kd 1 --n_nodes 1 --n_devices_per_node 8 --per_device_batch_size 8 --w_bits 1 --accumulate_grad_batches 4 --run_wandb
+
+
+python teacher.py  --tag mamba2_780m --model_size 780M  --train_data_dir data/Slimpajama --use_kd 1 --n_nodes 1 --n_devices_per_node 8 --per_device_batch_size 4 --w_bits 1 --accumulate_grad_batches 8

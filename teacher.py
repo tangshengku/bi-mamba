@@ -180,22 +180,22 @@ def main(tag='fully_qat',
         num_nodes=n_nodes,
         devices=n_devices_per_node,
         precision=PRECISION,
-        # strategy="deepspeed"
-        strategy=FSDPStrategy(
-            activation_checkpointing_policy={BiMamba2, GatedMLP, Block, LlamaDecoderLayer},
-            cpu_offload=True,
-            limit_all_gathers=True,
-            )
+        strategy="ddp"
+        # strategy=FSDPStrategy(
+        #     activation_checkpointing_policy={BiMamba2, Block},
+        #     cpu_offload=True,
+        #     limit_all_gathers=True,
+        #     )
         )
     fabric.launch()
 
     if use_kd > 0:
         teacher = MambaLMHeadModel.from_pretrained("models/mamba2-2.7b")
         teacher.eval()
-        for param in teacher.parameters():
-            param.requires_grad = False
-        teacher.config.use_cache = False
-        # teacher = fabric.setup(teacher)
+        # for param in teacher.parameters():
+        #     param.requires_grad = False
+        # teacher.config.use_cache = False
+        teacher = fabric.setup(teacher)
     else:
         teacher = None
 

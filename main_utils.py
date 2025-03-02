@@ -8,6 +8,7 @@ from torch.distributed.fsdp import FullStateDictConfig
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import StateDictType
 from lightning.fabric.strategies import FSDPStrategy
+from lightning.fabric.utilities import AttributeDict
 
 from pathlib import Path
 
@@ -60,17 +61,39 @@ def get_grad_norm(model):
 
 
 def save_checkpoint(fabric, tokenizer, model, optimizer, save_dir):
-    state = AttributeDict(model=model, optimizer=optimizer)
-    fabric.barrier()
-    fabric.save(
-        path=f'{save_dir}/fabric_ckpt',
-        state=state
-        )
-    if fabric.global_rank == 0:
-        tokenizer.save_pretrained(save_dir)
-        # assert isinstance(model.module, LlamaForCausalLM)
-        model.save_pretrained_lightning(
-            save_dir, state_dict={'model': model.state_dict(), 'optimizer': optimizer.state_dict()})
+    if isinstance(fabric.strategy, FSDPStrategy):
+        save_policy = FullStateDictConfig(
+            offload_to_cpu=(fabric.world_size > 1), rank0_only=True)
+        with FSDP.state_dict_type(
+                model,
+                state_dict_type=StateDictType.FULL_STATE_DICT,
+                state_dict_config=save_policy):
+            state_dict = model._forward_module.state_dict()
+
+        if fabric.global_rank == 0:
+            tokenizer.save_pretrained(save_dir)
+            # assert isinstance(model.module, LlamaForCausalLM)
+            model.save_pretrained_lightning(
+                save_dir, state_dict=state_dict)
+
+        fabric.barrier()
+        fabric.save(
+            path=f'{save_dir}/fabric_ckpt',
+            state={'model': model, 'optimizer': optimizer}
+            )
+        
+    else:
+        state = AttributeDict(model=model, optimizer=optimizer)
+        fabric.barrier()
+        fabric.save(
+            path=f'{save_dir}/fabric_ckpt',
+            state=state
+            )
+        if fabric.global_rank == 0:
+            tokenizer.save_pretrained(save_dir)
+            # assert isinstance(model.module, LlamaForCausalLM)
+            model.save_pretrained_lightning(
+                save_dir, state_dict={'model': model.state_dict(), 'optimizer': optimizer.state_dict()})
 
 
 # def get_last_ckpt_idx(workdir):

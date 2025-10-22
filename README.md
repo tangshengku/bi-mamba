@@ -1,5 +1,5 @@
-# Bi-Mamba: Towards Accurate 1-Bit State Space Models [[arXiv]](https://arxiv.org/abs/2411.11843)
-
+# Bi-Mamba: Towards Accurate 1-Bit State Space Models 
+[[arXiv]](https://arxiv.org/abs/2411.11843) [[OpenReview (accepted by TMLR)]](https://openreview.net/forum?id=CKQ4AgoRQm)
 &#x20;
 
 ## 🚀 Introduction
